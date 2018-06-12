@@ -104,7 +104,7 @@ This section describes the new vSphere Cluster which will be created for PKS Com
 $NewVCVSANClusterName = "PKS-Cluster"
 ```
 
-This section describes the general NSX-T configurations and most of the defaults can be left alone outside of the environmental specific configurations such as **NSXPrivatePortgroup** property.
+This section describes the general NSX-T configurations and most of the defaults can be left alone outside of the environmental specific configurations such as **NSXPrivatePortgroup** property. You will also need an additional VLAN-backed portgroup (e.g. dv-vlan3250) to act as an intermediate network to bridge you management traffic to the NSX-T Logical Networks. This is only required if you are using static routes which I am using in my environment. If you are using BGP, this is not required but will require some modification to the NSX-T configuration post-deployment.
 ```console
 $DeployNSX = 1
 $NSXRootPassword = "VMware1!"
@@ -148,7 +148,7 @@ $VlanTransportZoneName = "TZ-VLAN"
 $VlanTransportZoneNameHostSwitchName = "Hostswitch2-VLAN"
 ```
 
-This section describes the Uplink Profile that will be used for Edge VMs (just make sure you properly map the VM Networks when you deploy the Edge VM. Refer to blog post for more details)
+This section describes the Uplink Profile that will be used for Edge VMs (just make sure you properly map the VM Networks when you deploy the Edge VM. Please refer to this [blog post](https://www.virtuallyghetto.com/2018/03/getting-started-with-vmware-pivotal-container-service-pks-part-3-nsx-t.html) for more details)
 ```console
 $ESXiUplinkProfileName = "ESXi-Uplink-Profile"
 $ESXiUplinkProfilePolicy = "FAILOVER_ORDER"
