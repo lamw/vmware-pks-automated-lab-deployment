@@ -573,6 +573,7 @@ if($VirtualSwitchType -eq "VSS") {
     $network = Get-VirtualPortGroup -Server $viConnection -Name $VMNetwork | Select -First 1
     if($DeployNSX -eq 1) {
         $privateNetwork = Get-VirtualPortGroup -Server $viConnection -Name $NSXPrivatePortgroup | Select -First 1
+        $NSXIntermediateNetwork = Get-VirtualPortgroup -Server $viConnection -Name $NSXIntermediateNetworkPortgroup | Select -First 1
     }
 } else {
     $network = Get-VDPortgroup -Server $viConnection -Name $VMNetwork | Select -First 1
@@ -618,8 +619,8 @@ if($deployNestedESXiVMs -eq 1) {
         $vm = Import-VApp -Source $NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name $VMName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
 
         My-Logger "Adding vmnic2/vmnic3 to $NSXPrivatePortgroup ..."
-        New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $NSXPrivatePortgroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-        New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $NSXPrivatePortgroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $privateNetwork -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $privateNetwork -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
 
         My-Logger "Updating vCPU Count to $NestedESXivCPU & vMEM to $NestedESXivMEM GB ..."
         Set-VM -Server $viConnection -VM $vm -NumCpu $NestedESXivCPU -MemoryGB $NestedESXivMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
