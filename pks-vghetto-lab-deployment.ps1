@@ -1,26 +1,32 @@
 # Author: William Lam
 # Website: www.virtuallyghetto.com
-# Description: PowerCLI script to deploy the required infrastructure for setting up Piovtal Container Service (PKS)
+# Description: PowerCLI script to deploy the required infrastructure for setting up Piovtal Container Service (PKS) and configuring PKS components e2e
 
 # vCenter Server to deploy PKS Lab
 $VIServer = "vcenter.primp-industries.com"
 $VIUsername = "primp"
 $VIPassword = "-->MySuperDuperSecurePassword<--"
 
-# Full Path to both the Nested ESXi 6.5u1 VA, NSX-T & PKS OVAs
-$NestedESXiApplianceOVA = "C:\Users\primp\Desktop\Nested_ESXi6.5u1_Appliance_Template_v1.ova"
+# Full Path to Nested ESXi 6.5u1 VA, NSX-T & PKS OVAs
+$NestedESXiApplianceOVA = "C:\Users\primp\Desktop\Nested_ESXi6.5u1_Appliance_Template_v1.0.ova"
 $NSXTManagerOVA = "C:\Users\primp\Desktop\nsx-unified-appliance-2.1.0.0.0.7395503.ova"
 $NSXTControllerOVA = "C:\Users\primp\Desktop\nsx-controller-2.1.0.0.0.7395493.ova"
 $NSXTEdgeOVA = "C:\Users\primp\Desktop\nsx-edge-2.1.0.0.0.7395502.ova"
 $PKSOpsMgrOVA = "C:\Users\primp\Desktop\pcf-vsphere-2.1-build.318.ova"
 
-# PKS VMs
+# PKS Binaries
+$OMCLI = "C:\Users\primp\Desktop\om-windows.exe"
+$PKSTile = "C:\Users\primp\Desktop\pivotal-container-service-1.0.4-build.5.pivotal"
+$HarborTile = "C:\Users\primp\Desktop\harbor-container-registry-1.4.2-build.14.pivotal"
+$Stemcell = "C:\Users\primp\Desktop\bosh-stemcell-3468.42-vsphere-esxi-ubuntu-trusty-go_agent.tgz"
+
+# Ops Manager VM
 $OpsManagerDisplayName = "pks-opsmgr"
 $OpsManagerHostname = "pks-opsmgr.primp-industries.com"
 $OpsManagerIPAddress = "172.30.51.19"
 $OpsManagerNetmask = "255.255.255.0"
 $OpsManagerGateway = "172.30.51.1"
-$OpsManagerAdminPassword = "VMware1!"
+$OpsManagerOSPassword = "VMware1!"
 
 # Nested ESXi VMs to deploy
 $NestedESXiHostnameToIPs = @{
@@ -36,8 +42,8 @@ $NestedESXiCachingvDisk = "4" #GB
 $NestedESXiCapacityvDisk = "60" #GB
 
 # General Deployment Configuration for Nested ESXi, NSX-T & PKS VMs
-$VirtualSwitchType = "VDS" # VSS or VDS
-$VMNetwork = "dv-vlan3251"
+$VirtualSwitchType = "VSS" # VSS or VDS
+$VMNetwork = "vlan3251"
 $VMDatastore = "himalaya-local-SATA-dc3500-3"
 $VMNetmask = "255.255.255.0"
 $VMGateway = "172.30.51.1"
@@ -56,8 +62,193 @@ $VMCluster = "Primp-Cluster"
 # Name of new vSphere Cluster for the Compute ESXi Cluster
 $NewVCVSANClusterName = "PKS-Cluster"
 
+######## Ops Manager Configuration ########
+$OpsmanAdminUsername = "admin"
+$OpsmanAdminPassword = "VMware1!"
+$OpsmanDecryptionPassword = "VMware1!"
+
+########  BOSH Director Configuration ########
+$BOSHvCenterUsername = "pks"
+$BOSHvCenterPassword = "VMware1!"
+$BOSHvCenterDatacenter = "Production"
+$BOSHvCenterPersistentDatastores = "himalaya-local-SATA-re4gp4T:storage,vsanDatastore"
+$BOSHvCenterEpemeralDatastores = "himalaya-local-SATA-re4gp4T:storage,vsanDatastore"
+$BOSHvCenterVMFolder = "PKS-VMS"
+$BOSHvCenterTemplateFolder = "PKS-TEMPLATES"
+$BOSHvCenterDiskFolder = "PKS-DISKS"
+
+# AZ Defintions
+$BOSHManagementAZ = @{
+    "AZ-Management" = "Primp-Cluster"
+}
+$BOSHComputeAZ = @{
+    "AZ-Compute" = "PKS-Cluster"
+}
+# Network Definitions
+$BOSHManagementNetwork = @{
+    "pks-mgmt-network" = @{
+        portgroupname = "dv-vlan3251" #represents the vSphere Portgroup or NSX-T Logical Switch Name
+        cidr = "172.30.51.0/24"
+        reserved_range = "172.30.51.1-172.30.51.30"
+        dns = "172.30.0.100"
+        gateway = "172.30.51.1"
+        az = "AZ-Management"
+    }
+}
+$BOSHServiceNetwork = @{
+    "k8s-mgmt-cluster-network" = @{
+        portgroupname = "K8S-Mgmt-Cluster-LS" #represents the vSphere Portgroup or NSX-T Logical Switch Name
+        cidr = "10.10.0.0/24"
+        reserved_range = "10.10.0.1"
+        dns = "172.30.0.100"
+        gateway = "10.10.0.1"
+        az = "AZ-Compute"
+    }
+}
+$BOSHManagementNetworkAssignment = "pks-mgmt-network"
+$BOSHManagementAZAssignment = "AZ-Management"
+
+######## PKS Control Plane Configuration ########
+$PKSDatacenter = $RootDatacenterName
+$PKSDatastore = "vsanDatastore"
+$PKSCluster = $NewVCVSANClusterName
+$PKSvCenter = $VIServer
+$PKSCPIMasterUsername = $BOSHvCenterUsername
+$PKSCPIMasterPassword = $BOSHvCenterPassword
+$PKSCPIWorkerUsername = $BOSHvCenterUsername
+$PKSCPIWorkerPassword = $BOSHvCenterPassword
+$PKSNSX = "nsx-mgr.primp-industries.com"
+$PKSNSXUsername = "admin"
+$PKSNSXPassword = "VMware1!"
+$PKSManagementNetworkAssignment = $BOSHManagementNetworkAssignment
+$PKSManagementAZAssignment = $BOSHManagementAZAssignment
+$PKSServiceNetworkAssignment = "k8s-mgmt-cluster-network"
+$PKSServiceAZAssignment = "AZ-Compute"
+$PKSPlan1AZ = "AZ-Compute"
+$PKSPlan2AZ = "AZ-Compute"
+$PKSUAAURL = "uaa.primp-industries.com"
+
+$pksCertPEM = @'
+-----BEGIN CERTIFICATE-----
+MIIDyzCCArOgAwIBAgIJAOkdUNyqSIk+MA0GCSqGSIb3DQEBCwUAMHwxCzAJBgNV
+BAYTAlVTMQswCQYDVQQIDAJDQTEWMBQGA1UEBwwNU2FudGEgQmFyYmFyYTEZMBcG
+A1UECgwQUHJpbXAtSW5kdXN0cmllczEMMAoGA1UECwwDUiZEMR8wHQYDVQQDDBYq
+LnByaW1wLWluZHVzdHJpZXMuY29tMB4XDTE4MDYxNzAyMjM0M1oXDTIwMDYxNjAy
+MjM0M1owfDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMRYwFAYDVQQHDA1TYW50
+YSBCYXJiYXJhMRkwFwYDVQQKDBBQcmltcC1JbmR1c3RyaWVzMQwwCgYDVQQLDANS
+JkQxHzAdBgNVBAMMFioucHJpbXAtaW5kdXN0cmllcy5jb20wggEiMA0GCSqGSIb3
+DQEBAQUAA4IBDwAwggEKAoIBAQDFHe3d1DfNmkAmLLmWnCXwjHa58FiPwHt30bje
+KsJ1Bbn4qx51Y8Rjp7jQ9zipFF8EaWfK0weym1PHyr2Pxq0EshYvWKl+in5rKshY
+qtLvsu3wZe5QpFQrbNgqsjpZ6/Vo1mjSgxYtZs1NyPNIv/ertM9iaTyileenUtnk
+XgUzRgUXYgzRzNsCd9zaKc6I11N2g8/EKa0WXN1x+908BLAvyAlDX5Hqa66tDjZE
+pIkRwRvmPWnoGj/wssfbw4wosfHaaCKvtv0AiAruheFy8Tmah19Zy6Jfuhc1sjzl
+YO3GXFHpePls5U+oYjurL/2VAdY7Y4ZR9dDnpIs7vQm1HqdjAgMBAAGjUDBOMB0G
+A1UdDgQWBBQXb8OC3C0S7ScHz76AtJQlv13HmjAfBgNVHSMEGDAWgBQXb8OC3C0S
+7ScHz76AtJQlv13HmjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQCy
+eiypyNOeW6l1wEiIyXZJT8TqZKqLzPlIUWWci/mcJwzmvi3S1pXxI0Ke2o98sikX
+hb3JEfLfUogXTLcRo2taUv2iDtvrRGhoJte8a2S51VxuPRFuhDWmaYUTwNHDf8uP
+3S8WlkD8Foc2K6kK1UnfHN2CI43KC2Boce3jtyOz5Y4zABVMHoP0l4LxBUFnbhWu
+iV/ib/mMEoU4X3pX+JAjkVFSC2v0s9qhf4ws1shXgibx487hgZn8PqoQwXkPsaF/
+n5U2jUtSM6d3Hxd2Jo1U+C6qfUSWBboI44w8rnyzI4u4hjwBE3S4NNh46+jkpv24
+iC9imeTm7r/IXWZBfs87
+-----END CERTIFICATE-----
+'@
+
+$pksCertPrivateKey = @'
+-----BEGIN PRIVATE KEY-----
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDFHe3d1DfNmkAm
+LLmWnCXwjHa58FiPwHt30bjeKsJ1Bbn4qx51Y8Rjp7jQ9zipFF8EaWfK0weym1PH
+yr2Pxq0EshYvWKl+in5rKshYqtLvsu3wZe5QpFQrbNgqsjpZ6/Vo1mjSgxYtZs1N
+yPNIv/ertM9iaTyileenUtnkXgUzRgUXYgzRzNsCd9zaKc6I11N2g8/EKa0WXN1x
++908BLAvyAlDX5Hqa66tDjZEpIkRwRvmPWnoGj/wssfbw4wosfHaaCKvtv0AiAru
+heFy8Tmah19Zy6Jfuhc1sjzlYO3GXFHpePls5U+oYjurL/2VAdY7Y4ZR9dDnpIs7
+vQm1HqdjAgMBAAECggEBAK0acHbbVDohmO4tXrnt3L+XivgVIqDzJzp9GX05TdXY
+to2zMKdkeuYNN5eDU+Xf9uV372dF1b+6+mM9HyVxEyZJgoQHt6lh1E0moBSFx4Iq
+vxvbV+LHvQb5qggsxmOLfNOZXypnZgVu/yKtM0ETHFxVB75jrpUVUf82GhWbn7N6
+4PvyFLi13FCu9LOP1hTkp5zHbMPm7K+Bmiyc5VHZVoPQp4Nsg6nspJkA7jXHZRLk
+QPNl581L80duAzKcKi3rptZsoPiYpsnWK7sp3HkoT6Dzn0PTupmJ3LUS2VEDliG+
+qeKaEnGEWv/sxini01GDpqowo7H95MW2dGDaFwDn8BkCgYEA9dmXh0nyIX7F1nps
+EnPvkO85UpEbGRkXhcpSxyfW5YPIKsFRIxi9LAUpFgtBoWCbUYwXt54G6MlgQihw
+iZqx2sn8gKFz/CPJ5CaOmi36Eo0h6AfiUycMOsa/M/Cd4g47GOl0lETtg3JoiRue
+BP6wFgiKDAYNJZuQxLNilK0C/gcCgYEAzUFGDhQeC9CR/Pfs12Tfu7m21BB+Ci1c
+tsjwz84J6XKJ3D06DOEiB2tIgPiXz6PVRIUhL2mr2564gB6tSf2JW9Xht/8/KJTX
+ABccwUnz43wjkSFQ8XfZQD1UIDTwa4Cq6zuznQxJ2nznxpwb/5Gzzsn9QQwIKr/l
+Kw7H7MYadMUCgYEAncmvlScCfjjtJMChyB4crbq74aA78hnGnRnDkwqgw+GWgMpe
+FtZz42LUgc9rqfVk+iudtT15VcKZQxzNTaO5bqCgrLXyyOr3UrTkZVQI4gsurcsR
+mSjAkqCoat+NlV5o045SQi8S+YBeU1EkVDRaM2n7n8fqfC6h9XzkUmPQPdUCgYAn
+n+5SUXfrd/x3BbXnb0XyC8xL7FMoy9EWSHyU4YXwV3hd2EQYsG3NWNzKaTOFlm9Z
+pwndCV1wLJgZw9JYcmXOIOBOkSw0PWe0UMHwXsKCrDiBkBj8RNLgH/bZsN6pIlHc
+z83BB9pKH8rvALw2/n3j8gK+SABboGgxg8z83NHGsQKBgQDiPKp4weX0cP1/ablO
+MeMFIms+ISxjFi+f7iuXNs2LahbP/gK0fHyqM22ZLNsK3sb8KLc3PhykNZCpvE/s
+mlahgq98CyVapmK97GDLFEdbUXY1JY8XakcrDDUA8/GBM5IL0Vi6uLIeW8+pTa0L
+gr6moJLrg6EMbw1C7xWrzhxR0g==
+-----END PRIVATE KEY-----
+'@
+
+######## Harbor Configuration ########
+$HarborAdminPassword = "VMware1!"
+$HarborHostname = "pks-harbor.primp-industries.com"
+$HarborManagementNetworkAssignment = $BOSHManagementNetworkAssignment
+$HarborManagementAZAssignment = $BOSHManagementAZAssignment
+
+$harborCertPEM = @'
+-----BEGIN CERTIFICATE-----
+MIIDyzCCArOgAwIBAgIJANKigLa4gSLgMA0GCSqGSIb3DQEBCwUAMHwxCzAJBgNV
+BAYTAlVTMQswCQYDVQQIDAJDQTEWMBQGA1UEBwwNU2FudGEgQmFyYmFyYTEZMBcG
+A1UECgwQUHJpbXAtSW5kdXN0cmllczEMMAoGA1UECwwDUiZEMR8wHQYDVQQDDBYq
+LnByaW1wLWluZHVzdHJpZXMuY29tMB4XDTE4MDYxNzAyMjIwN1oXDTIwMDYxNjAy
+MjIwN1owfDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMRYwFAYDVQQHDA1TYW50
+YSBCYXJiYXJhMRkwFwYDVQQKDBBQcmltcC1JbmR1c3RyaWVzMQwwCgYDVQQLDANS
+JkQxHzAdBgNVBAMMFioucHJpbXAtaW5kdXN0cmllcy5jb20wggEiMA0GCSqGSIb3
+DQEBAQUAA4IBDwAwggEKAoIBAQCzwhsWPQOb6wTX+wlfkhtllNHAoz6pswJbhezO
+JDvxw1L2sECUvvb0SFIPcKQnyIyaaS5IFlG03unFC/IbIKRVduTloc5gLEErfPy3
+QKLlbEMzA/44K1vhqubY0568rbqJ4oVRSe/o7aaSaM68F7Nw5M+M9G5Yv6Ib9PAM
+CyLrFt8sg0u0uGvcNe4oz4ZrvZVcXf6XTH6RlQZsGZjBs6OMX5Svn2DimtcpLEsv
+Thzq6J3IeFNO5cbkksn0l7YVC6KW/wYxEHAN847Pf0dVnrQej2W7+W804RH0McJa
+Tupuzz0MDdZLMoe95UcvwXwkYrPg5smL0+dtckTKbH4bpUDfAgMBAAGjUDBOMB0G
+A1UdDgQWBBQjsCzrbQDpXmeFHVMDCnuq5GCbSzAfBgNVHSMEGDAWgBQjsCzrbQDp
+XmeFHVMDCnuq5GCbSzAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAC
+kXYq0EPs7GYZznwscEcwi8DMb8gr5xsIZ7fU1akwaDPwT9a3mCyGeOEsnmf/wW55
+LfQqXP1c3X9auTZ/N1GpP2qW/+PQA1hn825OcdLi6d+PFLPFS/Je+vr90GfTeZEG
+X0cljtAlHDEYTrh0m3Bp5QpxRto3Z7cTLermsIldBKuvc2SEuja4BYTLhot+urkN
+XvcJsPFO57D4f21qVVHXelVBEFbzn2Q+mWAb+emNi7tM45IMxWOh8pUl18888wKG
+dvLltkwohryDBtBICQB8JpZmdgLfSarCIQp13H0koMyR40DbZyachT8ftlcXIxAQ
+s3zI5HH8qWO16K17hjyz
+-----END CERTIFICATE-----
+'@
+
+$harborCertPrivateKey = @'
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCzwhsWPQOb6wTX
++wlfkhtllNHAoz6pswJbhezOJDvxw1L2sECUvvb0SFIPcKQnyIyaaS5IFlG03unF
+C/IbIKRVduTloc5gLEErfPy3QKLlbEMzA/44K1vhqubY0568rbqJ4oVRSe/o7aaS
+aM68F7Nw5M+M9G5Yv6Ib9PAMCyLrFt8sg0u0uGvcNe4oz4ZrvZVcXf6XTH6RlQZs
+GZjBs6OMX5Svn2DimtcpLEsvThzq6J3IeFNO5cbkksn0l7YVC6KW/wYxEHAN847P
+f0dVnrQej2W7+W804RH0McJaTupuzz0MDdZLMoe95UcvwXwkYrPg5smL0+dtckTK
+bH4bpUDfAgMBAAECggEAV6Uis9sX8WPLvssFrPV+Ki8/fh+aI//F/H32EiSUnbJQ
+tzsEogHiQwUoDaMsRsF/3KHAESHgwMGXVZ4Xc6acuZb40AXuq/Gn7N5KEceQJTB+
+K1edEiIB8Kv1Vm8IDJLgSu6JdjMIqJeHCgfUFN2xfi/yCpX7X4ZAMkVg7V5Yript
+d3qWGXPHDZg0LOc5CkaZhYO0pRCVTZfi7pM8Dxo+C8Mw/hLBwrEziL2kgyFMvUoU
+F5dTtMoy+yqyX2mEzg7YfA7kv70OhpyRQNZ+B1guXhgd+WDaanqxh7bRrRIG5RHd
+h3q/nyLrXdrSWLoHgM8KkYE/TYisW6fBsTGYSl1M8QKBgQDawUKVBbxEbqvjGPxC
+jQj3r5gHM0r1fdIASnyji2+c8zwZykN6s1E5pC6Tqz7GRwE6dlo6X4O3udGvlr8D
+RSb0IfzYRcZ2+Xyu/WPahzcRt+NL5Y70wmduH9xN2LaOGAupmRYyOLS5+8hWcf+O
+HuPRCLU7ICibjKkIfrSkLTU6WwKBgQDSXR67bRE0SIxJzJTW/1jq7+JLN4xbJ11O
+NxlCbJ0KYS0esHPzeOPBTKUJDQa8MIP0OD651mNLe5fU02RvAYkSzVUbrgjSOguu
+aRQD8+3YegIYk2amhA8/N7CZWBT0wdsXzfnX4CijJZUgp1q1IgtZWLMk5xQm6Ql6
+IxbncGtyzQKBgQDD5oJ79hDtr7aav0tZRfgb59Jb0GF2i2C/BfWseDhR87mE1w+r
+GF7LIe7cK2UiJ4BAHLEcyWCp7eyMNJGGmi0SQEWwYHwlG7O++gisMJ7ubSFOXJuz
+MU1y33Fo/YQup/X5wbCQ9RtT2tlEIP7dBWi7T/MMqfXzpvnRM7cNt7aNNQKBgBwI
+6PWVfXt4R6n2J8fXU+RLf98CUiQ7xMWNtkIR84PUm4zBe1JxQ/kY282u/LzLwmoj
+rMhbd/QxTnTAj1vz2m61CqibsvVBYxklS9OTCJmW+PyJeF6srtN/+nsVMAXGaApu
+GuPYLdJASfWGGCKXnOeVWJqMaTUeTXMHhh/l7YvpAoGAaobtDUTH78O27lVZ1IQ0
+/LsT9S72DhcK3n5a40WUMXgdxoQwa+3YaURspr20eJzt4xenY+4dKaJ+VHPPOfiK
+4UeazY1fbefUkA+ElzV8uaQEc0OVak8fbP9+5b05tiNgBpPP3Vo81Nb55FmbLJJe
+Z/bFvEcEbEabMJwxMyPl5ys=
+-----END PRIVATE KEY-----
+'@
+
 # NSX-T Configuration
-$DeployNSX = 1
 $NSXRootPassword = "VMware1!"
 $NSXAdminUsername = "admin"
 $NSXAdminPassword = "VMware1!"
@@ -65,8 +256,8 @@ $NSXAuditUsername = "audit"
 $NSXAuditPassword = "VMware1!"
 $NSXSSHEnable = "true"
 $NSXEnableRootLogin = "true"
-$NSXPrivatePortgroup = "dv-private"
-$NSXIntermediateNetworkPortgroup = "dv-vlan3250"
+$NSXPrivatePortgroup = "vm-private-network"
+$NSXIntermediateNetworkPortgroup = "vlan3250"
 
 $TunnelEndpointPoolName = "ESXi-VTEP-Pool"
 $TunnelEndpointPoolDescription = "Tunnel Endpoint for ESXi Transport Nodes"
@@ -167,6 +358,7 @@ $addHostByDnsName = 1
 #### DO NOT EDIT BEYOND HERE ####
 
 $debug = $true
+$pksDebug = $false
 $verboseLogFile = "pks-vghetto-lab-deployment.log"
 $random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % {[char]$_})
 $VAppName = "vGhetto-Nested-PKS-Lab-$random_string"
@@ -191,49 +383,17 @@ $deployOpsManager = 1
 $setupNewVC = 1
 $addESXiHostsToVC = 1
 $configureVSANDiskGroups = 1
+$deployNSX = 1
 $initialNSXConfig = 1
 $postDeployNSXConfig = 1
 $moveVMsIntovApp = 1
+$uploadStemcell = 1
+$setupOpsManager = 1
+$setupBOSHDirector = 1
+$setupPKS = 1
+$setupHarbor = 1
 
 $StartTime = Get-Date
-
-Function Get-SSLThumbprint256 {
-    param(
-    [Parameter(
-        Position=0,
-        Mandatory=$true,
-        ValueFromPipeline=$true,
-        ValueFromPipelineByPropertyName=$true)
-    ]
-    [Alias('FullName')]
-    [String]$URL
-    )
-
-add-type @"
-        using System.Net;
-        using System.Security.Cryptography.X509Certificates;
-            public class IDontCarePolicy : ICertificatePolicy {
-            public IDontCarePolicy() {}
-            public bool CheckValidationResult(
-                ServicePoint sPoint, X509Certificate cert,
-                WebRequest wRequest, int certProb) {
-                return true;
-            }
-        }
-"@
-    [System.Net.ServicePointManager]::CertificatePolicy = new-object IDontCarePolicy
-
-    # Need to connect using simple GET operation for this to work
-    Invoke-RestMethod -Uri $URL -Method Get | Out-Null
-
-    $ENDPOINT_REQUEST = [System.Net.Webrequest]::Create("$URL")
-    $CERT = $ENDPOINT_REQUEST.ServicePoint.Certificate
-    # https://stackoverflow.com/a/22251597
-    $BYTES = $cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-    Set-content -value $BYTES -encoding byte -path $ENV:TMP\cert-temp
-    $SSL_THUMBPRINT = (Get-FileHash -Path $ENV:TMP\cert-temp -Algorithm SHA256).Hash
-    return $SSL_THUMBPRINT -replace '(..(?!$))','$1:'
-}
 
 Function Set-VMKeystrokes {
     <#
@@ -424,16 +584,34 @@ if($preCheck -eq 1) {
         Write-Host -ForegroundColor Red "`nUnable to find $NSXTEdgeOVA ...`nexiting"
         exit
     }
+
+    if(!(Test-Path $OMCLI)) {
+        Write-Host -ForegroundColor Red "`nUnable to find $OMCLI ...`nexiting"
+        exit
+    }
+
+    if(!(Test-Path $PKSOpsMgrOVA)) {
+        Write-Host -ForegroundColor Red "`nUnable to find $PKSOpsMgrOVA ...`nexiting"
+        exit
+    }
+
+    if(!(Test-Path $PKSTile)) {
+        Write-Host -ForegroundColor Red "`nUnable to find $PKSTile ...`nexiting"
+        exit
+    }
+
+    if(!(Test-Path $HarborTile)) {
+        Write-Host -ForegroundColor Red "`nUnable to find $HarborTile ...`nexiting"
+        exit
+    }
 }
 
 if($confirmDeployment -eq 1) {
     Write-Host -ForegroundColor Magenta "`nPlease confirm the following configuration will be deployed:`n"
 
-    Write-Host -ForegroundColor Yellow "---- vGhetto NSX-T Automated Lab Deployment Configuration ---- "
+    Write-Host -ForegroundColor Yellow "---- vGhetto PKS Automated Lab Deployment Configuration ---- "
     Write-Host -NoNewline -ForegroundColor Green "Nested ESXi Image Path: "
     Write-Host -ForegroundColor White $NestedESXiApplianceOVA
-    Write-Host -NoNewline -ForegroundColor Green "VCSA Image Path: "
-    Write-Host -ForegroundColor White $VCSAInstallerPath
 
     if($DeployNSX -eq 1) {
         Write-Host -NoNewline -ForegroundColor Green "NSX-T Manager Image Path: "
@@ -443,6 +621,13 @@ if($confirmDeployment -eq 1) {
         Write-Host -NoNewline -ForegroundColor Green "NSX-T Edge Image Path: "
         Write-Host -ForegroundColor White $NSXTEdgeOVA
     }
+
+    Write-Host -NoNewline -ForegroundColor Green "Ops Manager Image Path: "
+    Write-Host -ForegroundColor White $PKSOpsMgrOVA
+    Write-Host -NoNewline -ForegroundColor Green "PKS Tile Path: "
+    Write-Host -ForegroundColor White $PKSTile
+    Write-Host -NoNewline -ForegroundColor Green "Harbor Tile Path: "
+    Write-Host -ForegroundColor White $HarborTile
 
     Write-Host -ForegroundColor Yellow "`n---- vCenter Server Deployment Target Configuration ----"
     Write-Host -NoNewline -ForegroundColor Green "vCenter Server Address: "
@@ -565,30 +750,40 @@ if($confirmDeployment -eq 1) {
     Clear-Host
 }
 
-My-Logger "Connecting to Management vCenter Server $VIServer ..."
-$viConnection = Connect-VIServer $VIServer -User $VIUsername -Password $VIPassword -WarningAction SilentlyContinue
-
-$datastore = Get-Datastore -Server $viConnection -Name $VMDatastore | Select -First 1
-if($VirtualSwitchType -eq "VSS") {
-    $network = Get-VirtualPortGroup -Server $viConnection -Name $VMNetwork | Select -First 1
-    if($DeployNSX -eq 1) {
-        $privateNetwork = Get-VirtualPortGroup -Server $viConnection -Name $NSXPrivatePortgroup | Select -First 1
-        $NSXIntermediateNetwork = Get-VirtualPortgroup -Server $viConnection -Name $NSXIntermediateNetworkPortgroup | Select -First 1
-    }
+if(($isWindows) -or ($Env:OS -eq "Windows_NT")) {
+    $DestinationCtrThumprintStore = "$ENV:TMP\controller-thumbprint"
+    $DestinationVCThumbprintStore = "$ENV:TMP\vc-thumbprint"
 } else {
-    $network = Get-VDPortgroup -Server $viConnection -Name $VMNetwork | Select -First 1
-    if($DeployNSX -eq 1) {
-        $privateNetwork = Get-VDPortgroup -Server $viConnection -Name $NSXPrivatePortgroup | Select -First 1
-        $NSXIntermediateNetwork = Get-VDPortgroup -Server $viConnection -Name $NSXIntermediateNetworkPortgroup | Select -First 1
-    }
+    $DestinationCtrThumprintStore = "/tmp/controller-thumbprint"
+    $DestinationVCThumbprintStore = "/tmp/vc-thumbprint"
 }
-$cluster = Get-Cluster -Server $viConnection -Name $VMCluster
-$datacenter = $cluster | Get-Datacenter
-$vmhost = $cluster | Get-VMHost | Select -First 1
 
-if($datastore.Type -eq "vsan") {
-    My-Logger "VSAN Datastore detected, enabling Fake SCSI Reservations ..."
-    Get-AdvancedSetting -Entity $vmhost -Name "VSAN.FakeSCSIReservations" | Set-AdvancedSetting -Value 1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+if( ($deployNestedESXiVMs -eq 1) -or ($deployOpsManager -eq 1) -or ($setupNewVC -eq 1) -or ($addESXiHostsToVC -eq 1) -or ($configureVSANDiskGroups -eq 1) -or ($deployNSX -eq 1) -or ($moveVMsIntovApp -eq 1) ) {
+    My-Logger "Connecting to Management vCenter Server $VIServer ..."
+    $viConnection = Connect-VIServer $VIServer -User $VIUsername -Password $VIPassword -WarningAction SilentlyContinue
+
+    $datastore = Get-Datastore -Server $viConnection -Name $VMDatastore | Select -First 1
+    if($VirtualSwitchType -eq "VSS") {
+        $network = Get-VirtualPortGroup -Server $viConnection -Name $VMNetwork | Select -First 1
+        #if($DeployNSX -eq 1) {
+            $privateNetwork = Get-VirtualPortGroup -Server $viConnection -Name $NSXPrivatePortgroup | Select -First 1
+            $NSXIntermediateNetwork = Get-VirtualPortgroup -Server $viConnection -Name $NSXIntermediateNetworkPortgroup | Select -First 1
+        #}
+    } else {
+        $network = Get-VDPortgroup -Server $viConnection -Name $VMNetwork | Select -First 1
+        if($DeployNSX -eq 1) {
+            $privateNetwork = Get-VDPortgroup -Server $viConnection -Name $NSXPrivatePortgroup | Select -First 1
+            $NSXIntermediateNetwork = Get-VDPortgroup -Server $viConnection -Name $NSXIntermediateNetworkPortgroup | Select -First 1
+        }
+    }
+    $cluster = Get-Cluster -Server $viConnection -Name $VMCluster
+    $datacenter = $cluster | Get-Datacenter
+    $vmhost = $cluster | Get-VMHost | Select -First 1
+
+    if($datastore.Type -eq "vsan") {
+        My-Logger "VSAN Datastore detected, enabling Fake SCSI Reservations ..."
+        Get-AdvancedSetting -Entity $vmhost -Name "VSAN.FakeSCSIReservations" | Set-AdvancedSetting -Value 1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+    }
 }
 
 if($deployNestedESXiVMs -eq 1) {
@@ -645,7 +840,7 @@ if($deployOpsManager -eq 1) {
     $opsMgrOvfCOnfig.Common.gateway.Value = $OpsManagerGateway
     $opsMgrOvfCOnfig.Common.ntp_servers.Value = $VMNTP
     $opsMgrOvfCOnfig.Common.DNS.Value = $VMDNS
-    $opsMgrOvfCOnfig.Common.admin_password.Value = $OpsManagerAdminPassword
+    $opsMgrOvfCOnfig.Common.admin_password.Value = $OpsManagerOSPassword
     $opsMgrOvfCOnfig.NetworkMapping.Network_1.Value = $VMNetwork
 
     My-Logger "Deploying PKS Ops Manager $OpsManagerDisplayName ..."
@@ -690,7 +885,7 @@ if($DeployNSX -eq 1) {
     $nsxMgrOvfConfig.Common.nsx_cli_audit_passwd_0.Value = $NSXAuditPassword
 
     My-Logger "Deploying NSX Manager VM $NSXTMgrDisplayName ..."
-    $nsxmgr_vm = Import-VApp -Source $NSXTManagerOVA -OvfConfiguration $nsxMgrOvfConfig -Name $NSXTMgrDisplayName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
+    $nsxmgr_vm = Import-VApp -Source $NSXTManagerOVA -OvfConfiguration $nsxMgrOvfConfig -Name $NSXTMgrDisplayName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin -Force
 
     My-Logger "Updating vCPU Count to $NSXTMgrvCPU & vMEM to $NSXTMgrvMEM GB ..."
     Set-VM -Server $viConnection -VM $nsxmgr_vm -NumCpu $NSXTMgrvCPU -MemoryGB $NSXTMgrvMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
@@ -734,7 +929,7 @@ if($DeployNSX -eq 1) {
         $nsxCtrOvfConfig.Common.nsx_cli_audit_passwd_0.Value = $NSXAuditPassword
 
         My-Logger "Deploying NSX Controller VM $VMName ..."
-        $nsxctr_vm = Import-VApp -Source $NSXTControllerOVA -OvfConfiguration $nsxCtrOvfConfig -Name $VMName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
+        $nsxctr_vm = Import-VApp -Source $NSXTControllerOVA -OvfConfiguration $nsxCtrOvfConfig -Name $VMName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin -Force
 
         My-Logger "Updating vCPU Count to $NSXTCtrvCPU & vMEM to $NSXTCtrvMEM GB ..."
         Set-VM -Server $viConnection -VM $nsxctr_vm -NumCpu $NSXTCtrvCPU -MemoryGB $NSXTCtrvMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
@@ -784,7 +979,7 @@ if($DeployNSX -eq 1) {
         $nsxEdgeOvfConfig.Common.nsx_cli_audit_passwd_0.Value = $NSXAuditPassword
 
         My-Logger "Deploying NSX Edge VM $NSXTEdgeDisplayName ..."
-        $nsxedge_vm = Import-VApp -Source $NSXTEdgeOVA -OvfConfiguration $nsxEdgeOvfConfig -Name $VMName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
+        $nsxedge_vm = Import-VApp -Source $NSXTEdgeOVA -OvfConfiguration $nsxEdgeOvfConfig -Name $VMName -Location $cluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin -Force
 
         My-Logger "Updating vCPU Count to $NSXTEdgevCPU & vMEM to $NSXTEdgevMEM GB ..."
         Set-VM -Server $viConnection -VM $nsxedge_vm -NumCpu $NSXTEdgevCPU -MemoryGB $NSXTEdgevMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
@@ -837,8 +1032,10 @@ if($moveVMsIntovApp -eq 1) {
     }
 }
 
-My-Logger "Disconnecting from $VIServer ..."
-Disconnect-VIServer -Server $viConnection -Confirm:$false
+if( ($deployNestedESXiVMs -eq 1) -or ($deployOpsManager -eq 1) -or ($setupNewVC -eq 1) -or ($addESXiHostsToVC -eq 1) -or ($configureVSANDiskGroups -eq 1) -or ($deployNSX -eq 1) -or ($moveVMsIntovApp -eq 1) ) {
+    My-Logger "Disconnecting from $VIServer ..."
+    Disconnect-VIServer -Server $viConnection -Confirm:$false
+}
 
 if($setupNewVC -eq 1) {
     My-Logger "Connecting to Management vCenter Server $VIServer ..."
@@ -848,7 +1045,7 @@ if($setupNewVC -eq 1) {
     New-Cluster -Server $viConnection -Name $NewVCVSANClusterName -Location (Get-Datacenter -Name $RootDatacenterName -Server $viConnection) -DrsEnabled -VsanEnabled -VsanDiskClaimMode 'Manual' | Out-File -Append -LiteralPath $verboseLogFile
 
     if($addESXiHostsToVC -eq 1) {
-        $NestedESXiHostnameToIPs.GetEnumerator() | sort -Property Value | Foreach-Object {
+        $NestedESXiHostnameToIPs.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
             $VMName = $_.Key
             $VMIPAddress = $_.Value
 
@@ -914,6 +1111,7 @@ if($initialNSXConfig -eq 1) {
     $ctrCount=0
     $firstNSXController = ""
     $nsxControllerCertThumbprint  = ""
+    $grabbedVCThumbprint = 0
     $NSXTControllerHostnameToIPs.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
         $nsxCtrName = $_.name
         $nsxCtrIp = $_.value
@@ -997,6 +1195,22 @@ if($initialNSXConfig -eq 1) {
                 Set-VMKeystrokes -VMName $nsxCtrName -StringInput $NSXRootPassword -ReturnCarriage $true
                 Start-Sleep 10
 
+                # Retrieve VC SHA256 Thumbprint by running openssl in the shell and
+                # storing the thumbprint to a file which we will download later
+                # only need to do this once
+                if($grabbedVCThumbprint -eq 0) {
+                    if($debug) { My-Logger "Sending openssl to get VC Thumbprint ..." }
+                    $vcThumbprintCmd = "echo -n | openssl s_client -connect ${VIServer}:443 2>/dev/null | openssl x509 -noout -fingerprint -sha256 | awk -F `'=`' `'{print `$2}`' > /tmp/vc-thumbprint"
+                    Set-VMKeystrokes -VMName $nsxCtrName -StringInput $vcThumbprintCmd -ReturnCarriage $true
+                    Start-Sleep 25
+
+                    if($debug) { My-Logger "Processing certificate thumbprint ..." }
+                    Copy-VMGuestFile -vm (Get-VM -Name $nsxCtrName) -GuestToLocal -GuestUser "root" -GuestPassword $NSXRootPassword -Source /tmp/vc-thumbprint -Destination $DestinationVCThumbprintStore | Out-Null
+                    $vcCertThumbprint = Get-Content -Path $DestinationVCThumbprintStore
+
+                    $grabbedVCThumbprint = 1
+                }
+
                 # Retrieve Control Cluster Thumbprint by running nsxcli in the shell and
                 # storing the thumbprint to a file which we will download later
                 if($debug) { My-Logger "Sending get control cluster cert ..." }
@@ -1004,9 +1218,8 @@ if($initialNSXConfig -eq 1) {
                 Set-VMKeystrokes -VMName $nsxCtrName -StringInput $ctrClusterThumbprintCmd -ReturnCarriage $true
                 Start-Sleep 25
 
-                if($debug) { My-Logger "Processing certificate thumbprint ..." }
-                Copy-VMGuestFile -vm (Get-VM -Name $nsxCtrName) -GuestToLocal -GuestUser "root" -GuestPassword $NSXRootPassword -Source /tmp/controller-thumbprint -Destination $ENV:TMP\controller-thumbprint | Out-Null
-                $nsxControllerCertThumbprint = Get-Content -Path $ENV:TMP\controller-thumbprint | ? {$_.trim() -ne "" }
+                Copy-VMGuestFile -vm (Get-VM -Name $nsxCtrName) -GuestToLocal -GuestUser "root" -GuestPassword $NSXRootPassword -Source /tmp/controller-thumbprint -Destination $DestinationCtrThumprintStore | Out-Null
+                $nsxControllerCertThumbprint = Get-Content -Path $DestinationCtrThumprintStore | ? {$_.trim() -ne "" }
 
                 # Exit from shell
                 if($debug) { My-Logger "Sending exit command ..." }
@@ -1167,7 +1380,7 @@ if($postDeployNSXConfig -eq 1) {
         $addResult = $ipPoolSpec.subnets.Add($subNetSpec)
         $ipPool = $ipPoolService.create($ipPoolSpec)
 
-        My-Logger "Load Balancer IP Pool for K8S ..."
+        My-Logger "Creating Load Balancer IP Pool for K8S ..."
         $ipPoolService = Get-NsxtService -Name "com.vmware.nsx.pools.ip_pools"
         $ipPoolSpec = $ipPoolService.help.create.ip_pool.Create()
         $subNetSpec = $ipPoolService.help.create.ip_pool.subnets.Element.Create()
@@ -1215,11 +1428,9 @@ if($postDeployNSXConfig -eq 1) {
 
         $computeManagerSpec = $computeManagerSerivce.help.create.compute_manager.Create()
         $credentialSpec = $computeManagerSerivce.help.create.compute_manager.credential.username_password_login_credential.Create()
-        $VCURL = "https://" + $VIServer + ":443"
-        $VCThumbprint = Get-SSLThumbprint256 -URL $VCURL
         $credentialSpec.username = $VIUsername
         $credentialSpec.password = $VIPassword
-        $credentialSpec.thumbprint = $VCThumbprint
+        $credentialSpec.thumbprint = $vcCertThumbprint
         $computeManagerSpec.server = $VIServer
         $computeManagerSpec.origin_type = "vCenter"
         $computeManagerSpec.display_name = $VIServer
@@ -1554,7 +1765,7 @@ if($postDeployNSXConfig -eq 1) {
         My-Logger "Creating T1 Logical Downlink Router Port $T1DownlinkRouterPortNameOnT1 ..."
         # Downlink-1
         $subnetAdd = $subnetSpec.ip_addresses.Add($T1DownlinkRouterPortIP)
-        $subNetSpec.prefix_length = $T1DownlinkRouterPortIPPrefix     
+        $subNetSpec.prefix_length = $T1DownlinkRouterPortIPPrefix
         $subnetAdd = $downlinkPortOnT1.subnets.Add($subNetSpec)
         $downlinkPortOnT1.display_name = $T1DownlinkRouterPortNameOnT1
         $downlinkPortOnT1.linked_logical_switch_port_id.target_type = "LogicalPort"
@@ -1583,10 +1794,428 @@ if($postDeployNSXConfig -eq 1) {
     Disconnect-NsxtServer * -Confirm:$false
 }
 
+if($setupOpsManager -eq 1) {
+    My-Logger "Setting up Ops Manager ..."
+
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword configure-authentication --username $OpsmanAdminUsername --password $OpsmanAdminPassword --decryption-passphrase $OpsmanDecryptionPassword"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+}
+
+if($uploadStemcell -eq 1) {
+    $StemcellProduct = (Split-Path -Path $Stemcell -Leaf).ToString()
+
+    My-Logger "Uploading Stemcell $StemcellProduct ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword upload-stemcell --force --stemcell $Stemcell"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+}
+
+if($setupBOSHDirector -eq 1) {
+    My-Logger "Setting up BOSH Director ..."
+
+    # Create BOSH YAML manually since we don't have native support for YAML in PS
+    $boshPayloadStart = @"
+---
+  az-configuration:
+
+"@
+    # Process Mgmt & Compute AZ
+    $mgmtAZString = ""
+    $BOSHManagementAZ.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
+        $mgmtAZString += "  - name: `'"+$_.Name+"`'`n"
+        $mgmtAZString += "    cluster: `'"+$_.Value+"`'`n"
+    }
+
+    $computeAZString = ""
+    $BOSHComputeAZ.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
+        $computeAZString += "  - name: `'"+$_.Name+"`'`n"
+        $computeAZString += "    cluster: `'"+$_.Value+"`'`n"
+    }
+
+    # Process Networks
+    $boshPayloadNetwork = @"
+  networks-configuration:
+    icmp_checks_enabled: false
+    networks:
+
+"@
+    $mgmtNetworkString = ""
+    $BOSHManagementNetwork.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
+        $mgmtNetworkString += "    - name: `'"+$_.Name+"`'`n"
+        $mgmtNetworkString += "      service-network: false`'`n"
+        $mgmtNetworkString += "      subnets:`n"
+        $mgmtNetworkString += "        - iaas_identifier: `'"+$_.Value['portgroupname']+"`'`n"
+        $mgmtNetworkString += "          cidr: `'"+$_.Value['cidr']+"`'`n"
+        $mgmtNetworkString += "          gateway: `'"+$_.Value['gateway']+"`'`n"
+        $mgmtNetworkString += "          dns: `'"+$_.Value['dns']+"`'`n"
+        $mgmtNetworkString += "          cidr: `'"+$_.Value['cidr']+"`'`n"
+        $mgmtNetworkString += "          reserved_ip_ranges: `'"+$_.Value['reserved_range']+"`'`n"
+        $mgmtNetworkString += "          availability_zone_names:`n"
+        $mgmtNetworkString += "          - `'"+$_.Value['az']+"`'`n"
+    }
+
+    $computeNetworkString = ""
+    $BOSHServiceNetwork.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
+        $computeNetworkString += "    - name: `'"+$_.Name+"`'`n"
+        $computeNetworkString += "      service-network: true`'`n"
+        $computeNetworkString += "      subnets:`n"
+        $computeNetworkString += "        - iaas_identifier: `'"+$_.Value['portgroupname']+"`'`n"
+        $computeNetworkString += "          cidr: `'"+$_.Value['cidr']+"`'`n"
+        $computeNetworkString += "          gateway: `'"+$_.Value['gateway']+"`'`n"
+        $computeNetworkString += "          dns: `'"+$_.Value['dns']+"`'`n"
+        $computeNetworkString += "          cidr: `'"+$_.Value['cidr']+"`'`n"
+        $computeNetworkString += "          reserved_ip_ranges: `'"+$_.Value['reserved_range']+"`'`n"
+        $computeNetworkString += "          availability_zone_names:`n"
+        $computeNetworkString += "          - `'"+$_.Value['az']+"`'`n"
+    }
+
+    # Concat Mgmt & Service Network
+    $boshPayloadNetwork += $mgmtNetworkString
+    $boshPayloadNetwork += $computeNetworkString
+
+    # Process remainder configs
+    $boshPayloadEnd = @"
+  director-configuration:
+    post_deploy_enabled: true
+    bosh_recreate_on_next_deploy: true
+    database_type: 'internal'
+    resurrector_enabled: true
+    director_worker_count: '5'
+    ntp_servers_string: $VMNTP
+    blobstore_type: 'local'
+  network-assignment:
+    network:
+      name: $BOSHManagementNetworkAssignment
+    singleton_availability_zone:
+      name: $BOSHManagementAZAssignment
+  iaas-configuration:
+    bosh_disk_path: $BOSHvCenterDiskFolder
+    bosh_vm_folder: $BOSHvCenterVMFolder
+    bosh_template_folder: $BOSHvCenterTemplateFolder
+    disk_type: 'thin'
+    datacenter: $BOSHvCenterDatacenter
+    persistent_datastores_string: $BOSHvCenterPersistentDatastores
+    ephemeral_datastores_string: $BOSHvCenterEpemeralDatastores
+    vcenter_host: $VIServer
+    vcenter_username: $BOSHvCenterUsername
+    vcenter_password: $BOSHvCenterPassword
+  security-configuration:
+    vm_password_type: 'generate'
+    trusted_certificates: ''
+"@
+
+    # Concat configuration to form final YAML
+    $boshPayload = $boshPayloadStart + $mgmtAZString + $computeAZString + $boshPayloadNetwork + $boshPayloadEnd
+
+    $boshYaml = "pks-bosh.yaml"
+    $boshPayload > $boshYaml
+
+    My-Logger "Applying BOSH configuration ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword configure-director --config $boshYaml"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    My-Logger "Installing BOSH tile, this will take some time. Please grab some coffee or beer while you wait ..."
+    $installArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword apply-changes"
+    if($pksDebug) { My-Logger "${OMCLI} $installArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $installArgs -Wait -RedirectStandardOutput $verboseLogFile
+}
+
+if($setupPKS -eq 1) {
+    My-Logger "Setting up PKS Control Plane ..."
+
+    if(!(Connect-NsxtServer -Server $NSXTMgrHostname -Username $NSXAdminUsername -Password $NSXAdminPassword -WarningAction SilentlyContinue)) {
+        Write-Host -ForegroundColor Red "Unable to connect to NSX Manager, please check the deployment"
+        exit
+    } else {
+        My-Logger "Successfully logged into NSX Manager $NSXTMgrHostname to retrieve some information ..."
+    }
+
+    $ipPoolService = Get-NsxtService -Name "com.vmware.nsx.pools.ip_pools"
+    $ipPool = $ipPoolService.list().results | where { $_.display_name -eq $LoadBalancerPoolName}
+    $IpPoolID = $ipPool.Id
+
+    $ipBlockService = Get-NsxtService -Name "com.vmware.nsx.pools.ip_blocks"
+    $ipBlock = $ipBlockService.list().results | where { $_.display_name -eq $ipBlockName}
+    $IpBlockID = $ipBlock.Id
+
+    $logicalRouterService = Get-NsxtService -Name "com.vmware.nsx.logical_routers"
+    $logicalRouter = $logicalRouterService.list().results | where { $_.display_name -eq $T0LogicalRouterName}
+    $T0RouterID = $logicalRouter.Id
+
+    My-Logger "Disconnecting from NSX Manager ..."
+    Disconnect-NsxtServer -Confirm:$false
+
+    $PKSProduct = (Split-Path -Path $PKSTile -Leaf).ToString()
+    $PKSProductName = "pivotal-container-service"
+    $PKSVersion = $PKSProduct.Replace("pivotal-container-service-","").Replace(".pivotal","")
+
+    # Upload PKS Tile
+    My-Logger "Uploading PKS Tile $PKSProduct ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword upload-product --product $PKSTile"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    # Stage PKS Tile
+    My-Logger "Adding PKS Tile to Ops Manager ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword stage-product --product-name $PKSProductName --product-version $PKSVersion"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    # Process PEM certs into single stringe encoded with \r\n
+    $certPEMString = ""
+    $certPrivateString = ""
+    $pksCertPEM -split "`r`n" | ForEach-Object {
+        $s = $_ + "\r\n"
+        $certPEMString += $s
+    }
+    $pksCertPrivateKey -split "`r`n" | ForEach-Object {
+        $s = $_ + "\r\n"
+        $certPrivateString += $s
+    }
+
+    # Create PKS YAML manually since we don't have native support for YAML in PS
+    $pksPayload = @"
+product-properties:
+    .pivotal-container-service.pks_tls:
+      value:
+        cert_pem: "$certPemString"
+        private_key_pem: "$certPrivateString"
+    .properties.cloud_provider:
+      value: vSphere
+    .properties.cloud_provider.vsphere.vcenter_dc:
+      value: $PKSDatacenter
+    .properties.cloud_provider.vsphere.vcenter_ds:
+      value: $PKSDatastore
+    .properties.cloud_provider.vsphere.vcenter_ip:
+      value: $PKSvCenter
+    .properties.cloud_provider.vsphere.vcenter_master_creds:
+      value:
+        identity: $PKSCPIMasterUsername
+        password: $PKSCPIMasterPassword
+    .properties.cloud_provider.vsphere.vcenter_vms:
+      value: $PKSDatastore
+    .properties.cloud_provider.vsphere.vcenter_worker_creds:
+      value:
+        identity: $PKSCPIWorkerUsername
+        password: $PKSCPIWorkerPassword
+    .properties.network_selector:
+      value: nsx
+    .properties.network_selector.nsx.credentials:
+      value:
+        identity: $PKSNSXUsername
+        password: $PKSNSXPassword
+    .properties.network_selector.nsx.floating-ip-pool-ids:
+      value: $IpPoolID
+    .properties.network_selector.nsx.ip-block-id:
+      value: $IpBlockID
+    .properties.network_selector.nsx.nsx-t-host:
+      value: $PKSNSX
+    .properties.network_selector.nsx.nsx-t-insecure:
+      value: true
+    .properties.network_selector.nsx.t0-router-id:
+      value: $T0RouterID
+    .properties.network_selector.nsx.vcenter_cluster:
+      value: $PKSCluster
+    .properties.plan1_selector:
+      value: Plan Active
+    .properties.plan1_selector.active.allow_privileged_containers:
+      value: false
+    .properties.plan1_selector.active.authorization_mode:
+      value: rbac
+    .properties.plan1_selector.active.az_placement:
+      value: $PKSPlan1AZ
+    .properties.plan1_selector.active.description:
+      value: Default plan for K8s cluster
+    .properties.plan1_selector.active.errand_vm_type:
+      value: micro
+    .properties.plan1_selector.active.master_persistent_disk_type:
+      value: "10240"
+    .properties.plan1_selector.active.master_vm_type:
+      value: medium
+    .properties.plan1_selector.active.name:
+      value: small
+    .properties.plan1_selector.active.persistent_disk_type:
+      value: "10240"
+    .properties.plan1_selector.active.worker_instances:
+      value: 3
+    .properties.plan1_selector.active.worker_vm_type:
+      value: medium
+    .properties.plan2_selector:
+      value: Plan Active
+    .properties.plan2_selector.active.allow_privileged_containers:
+      value: false
+    .properties.plan2_selector.active.authorization_mode:
+      value: rbac
+    .properties.plan2_selector.active.az_placement:
+      value: $PKSPlan2AZ
+    .properties.plan2_selector.active.description:
+      value: For Large Workloads
+    .properties.plan2_selector.active.errand_vm_type:
+      value: micro
+    .properties.plan2_selector.active.master_persistent_disk_type:
+      value: "10240"
+    .properties.plan2_selector.active.master_vm_type:
+      value: large
+    .properties.plan2_selector.active.name:
+      value: medium
+    .properties.plan2_selector.active.persistent_disk_type:
+      value: "10240"
+    .properties.plan2_selector.active.worker_instances:
+      value: 5
+    .properties.plan2_selector.active.worker_vm_type:
+      value: medium
+    .properties.plan3_selector:
+      value: Plan Inactive
+    .properties.plan3_selector.active.allow_privileged_containers:
+      value: false
+    .properties.plan3_selector.active.errand_vm_type:
+      value: micro
+    .properties.plan3_selector.active.master_persistent_disk_type:
+      value: "10240"
+    .properties.plan3_selector.active.name:
+      value: large
+    .properties.plan3_selector.active.persistent_disk_type:
+      value: "10240"
+    .properties.syslog_migration_selector:
+      value: disabled
+    .properties.syslog_migration_selector.enabled.tls_enabled:
+      value: true
+    .properties.syslog_migration_selector.enabled.transport_protocol:
+      value: tcp
+    .properties.uaa_pks_cli_access_token_lifetime:
+      value: 86400
+    .properties.uaa_pks_cli_refresh_token_lifetime:
+      value: 172800
+    .properties.uaa_url:
+      value: $PKSUAAURL
+network-properties:
+    network:
+      name: $BOSHManagementNetworkAssignment
+    other_availability_zones:
+      - name: $BOSHManagementAZAssignment
+    service_network:
+      name: $PKSServiceNetworkAssignment
+    singleton_availability_zone:
+      name: $BOSHManagementAZAssignment
+resource-config:
+    pivotal-container-service:
+      instances: automatic
+      persistent_disk:
+        size_mb: automatic
+      instance_type:
+        id: automatic
+"@
+    $pksYaml = "pks-pks.yaml"
+    $pksPayload > $pksYaml
+
+    My-Logger "Applying PKS configuration ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword configure-product --product-name $PKSProductName --config $pksYaml"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    # setup errands
+    My-Logger "Applying PKS Errands ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword set-errand-state --product-name $PKSProductName --errand-name pks-nsx-t-precheck --post-deploy-state enabled"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    My-Logger "Installing PKS tile, this will take some time. Please grab some coffee or beer while you wait ..."
+    $installArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword apply-changes"
+    if($pksDebug) { My-Logger "${OMCLI} $installArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $installArgs -Wait -RedirectStandardOutput $verboseLogFile
+}
+
+if($setupHarbor -eq 1) {
+    $HarborProduct = (Split-Path -Path $HarborTile -Leaf).ToString()
+    $HarborProductName = "harbor-container-registry"
+    $HarborVersion = $HarborProduct.Replace("harbor-container-registry-","").Replace(".pivotal","")
+
+    # Upload Harbor Tile
+    My-Logger "Uploading Harbor Tile $HarborProduct ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword upload-product --product $HarborTile"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    # Stage Harbor Tile
+    My-Logger "Adding Harbor Tile to Ops Manager ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword stage-product --product-name $HarborProductName --product-version $HarborVersion"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    # Process PEM certs into single stringe encoded with \r\n
+    $certPEMString = ""
+    $certPrivateString = ""
+    $harborCertPEM -split "`r`n" | ForEach-Object {
+        $s = $_ + "\r\n"
+        $certPEMString += $s
+    }
+    $harborCertPrivateKey -split "`r`n" | ForEach-Object {
+        $s = $_ + "\r\n"
+        $certPrivateString += $s
+    }
+
+    # Create Harbor YAML manually since we don't have native support for YAML in PS
+    $HarborPayload = @"
+product-properties:
+  .properties.admin_password:
+    value:
+      secret: $HarborAdminPassword
+  .properties.auth_mode:
+    value: uaa_auth_pks
+  .properties.hostname:
+    value: $HarborHostname
+  .properties.no_proxy:
+    value: 127.0.0.1,localhost,ui
+  .properties.registry_storage:
+    value: filesystem
+  .properties.server_cert_key:
+    value:
+      cert_pem: "$certPEMString"
+      private_key_pem: "$certPrivateString"
+  .properties.with_clair:
+    value: true
+  .properties.with_notary:
+    value: true
+network-properties:
+  network:
+    name: $HarborManagementNetworkAssignment
+  other_availability_zones:
+  - name: $HarborManagementAZAssignment
+  singleton_availability_zone:
+    name: $HarborManagementAZAssignment
+resource-config:
+  harbor-app:
+    instances: automatic
+    persistent_disk:
+      size_mb: automatic
+    instance_type:
+      id: automatic
+  smoke-testing:
+    instances: automatic
+    instance_type:
+      id: automatic
+"@
+
+    $harborYaml = "pks-harbor.yaml"
+    $harborPayload > $harborYaml
+
+    My-Logger "Applying Harbor configuration ..."
+    $configArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword configure-product --product-name $HarborProductName --config $harborYaml"
+    if($pksDebug) { My-Logger "${OMCLI} $configArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $configArgs -Wait -RedirectStandardOutput $verboseLogFile
+
+    My-Logger "Installing Harbor tile, this will take some time. Please grab some coffee or beer while you wait ..."
+    $installArgs = "-k -t $OpsManagerHostname -u $OpsmanAdminUsername -p $OpsmanAdminPassword apply-changes"
+    if($pksDebug) { My-Logger "${OMCLI} $installArgs"}
+    $output = Start-Process -FilePath $OMCLI -ArgumentList $installArgs -Wait -RedirectStandardOutput $verboseLogFile
+}
+
 $EndTime = Get-Date
 $duration = [math]::Round((New-TimeSpan -Start $StartTime -End $EndTime).TotalMinutes,2)
 
-My-Logger "PKS 1.0 Lab Deployment Complete!"
+My-Logger "PKS Lab Deployment Complete!"
 My-Logger "StartTime: $StartTime"
 My-Logger "  EndTime: $EndTime"
 My-Logger " Duration: $duration minutes"
