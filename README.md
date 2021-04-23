@@ -1,4 +1,4 @@
-# vGhetto Automated PKS Lab Deployment
+# VMware Pivotal Container Service (PKS) Automated Lab Deployment
 
 ![](pks-logo.png)
 
@@ -17,7 +17,7 @@ Automated deployment of the infrastructure (Nested ESXi including VSAN storage, 
 
 Below is an screenshot of an example deployment:
 
-![](screenshot-pks-vghetto-lab-deployment-1.png)
+![](screenshot-vmware-pks-lab-deployment-1.png)
 
 ## Changelog
 
@@ -30,7 +30,7 @@ Below is an screenshot of an example deployment:
 * vCenter Server endpoint running at least vSphere 6.5 or later
 * Windows system that supports PowerCLI
 * [PowerCLI 10.1](https://code.vmware.com/web/dp/tool/vmware-powercli/10.1.0) or greater
-* Download [pks-vghetto-lab-deployment.ps1](pks-vghetto-lab-deployment.ps1) script
+* Download [vmware-pks-lab-deployment.ps1](vmware-pks-lab-deployment.ps1) script
 * Nested ESXi [6.5d](https://download3.vmware.com/software/vmw-tools/nested-esxi/Nested_ESXi6.5d_Appliance_Template_v1.0.ova) or [6.5 Update 1](https://download3.vmware.com/software/vmw-tools/nested-esxi/Nested_ESXi6.5u1_Appliance_Template_v1.0.ova) Virtual Appliance OVA
 * NSX-T 2.1
   * [NSX-T 2.1 Manager for ESXi OVA](https://my.vmware.com/group/vmware/details?downloadGroup=NSX-T-210&productId=673&download=true&fileId=ceb09d4c2a044e745be0e5ab7f698295&secureParam=4faa362cd30eda7241a9471ee692774b&uuId=e268e430-59fd-45f2-a7c4-08629fe084ef&downloadType=)
@@ -479,7 +479,7 @@ Once you have saved your changes, you can now run the PowerCLI script as you nor
 
 ## Logging
 
-There is additional verbose logging that outputs as a log file in your current working directory called **pks-vghetto-lab-deployment.log** which can be useful for debugging purposes.
+There is additional verbose logging that outputs as a log file in your current working directory called **vmare-pks-lab-deployment.log** which can be useful for debugging purposes.
 
 For advanced debugging, you can set `$pksDebug` flag to $true ($false by default) which will also print out the OM CLI commands if you are running into issues
 
@@ -487,10 +487,10 @@ For advanced debugging, you can set `$pksDebug` flag to $true ($false by default
 
 Here is an example deployment of just the PKS infrastructure:
 
-![](screenshot-pks-vghetto-lab-deployment-0.png)
+![](screenshot-vmware-pks-lab-deployment-0.png)
 
 Here is an example deployment including the PKS components (deployment and configuration)
 
-![](screenshot-pks-vghetto-lab-deployment-2.png)
+![](screenshot-vmware-pks-lab-deployment-2.png)
 
 If everything is succesful, you should be able to login to the NSX-T Manager to confirm all the network deployments. You should be able to login to your Ops Manager instance and start your PKS deployment workflows or the default will automatically configure the solution end-2-end. 

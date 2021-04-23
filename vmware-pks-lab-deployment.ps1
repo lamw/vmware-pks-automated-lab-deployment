@@ -359,9 +359,9 @@ $addHostByDnsName = 1
 
 $debug = $true
 $pksDebug = $false
-$verboseLogFile = "pks-vghetto-lab-deployment.log"
+$verboseLogFile = "vmware-pks-lab-deployment.log"
 $random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % {[char]$_})
-$VAppName = "vGhetto-Nested-PKS-Lab-$random_string"
+$VAppName = "Nested-VMware-PKS-Lab-$random_string"
 
 $nsxStorageMap = @{
 "manager"="160";
@@ -609,7 +609,7 @@ if($preCheck -eq 1) {
 if($confirmDeployment -eq 1) {
     Write-Host -ForegroundColor Magenta "`nPlease confirm the following configuration will be deployed:`n"
 
-    Write-Host -ForegroundColor Yellow "---- vGhetto PKS Automated Lab Deployment Configuration ---- "
+    Write-Host -ForegroundColor Yellow "---- VMware PKS Automated Lab Deployment Configuration ---- "
     Write-Host -NoNewline -ForegroundColor Green "Nested ESXi Image Path: "
     Write-Host -ForegroundColor White $NestedESXiApplianceOVA
 
